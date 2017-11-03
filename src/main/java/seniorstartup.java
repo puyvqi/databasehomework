@@ -26,12 +26,13 @@ public class seniorstartup {
         //seniorstartup.batchInsertUser( seniorstartup.readfile("user"));
         //seniorstartup.batchInsertRecord( seniorstartup.readfile("record"));
 
-        seniorstartup.repair();
+        //seniorstartup.repair();
+
         String[] s=new String[100];
         for(int i=0;i!=s.length;i++){
             s[i]=String.valueOf(i);
         }
-        //seniorstartup.deduceAddr(s);
+        seniorstartup.deduceAddr();
         //seniorstartup.caculatePayment();
         String st="2015-07-08 06:06:00";
         String et="2015-07-08 06:06:01.11";
@@ -62,43 +63,71 @@ public class seniorstartup {
             e.printStackTrace();
         }
     }
-    public static void deduceAddr(String[] id){//2.2
+    public static void deduceAddr(){//2.2
         try{
             cn.setAutoCommit(false);
-            PreparedStatement ps=cn.prepareStatement(
+            Statement s=cn.createStatement();
+            ResultSet rs= s.executeQuery(
                     "SELECT ma.userid,ma.destaddr,count(*) as fre " +
                     "FROM records ma " +
-                    "WHERE userid=? " +
-                    "      AND date_format(ma.desttime,'%H:%i:%s')<='23:59:59' " +
+                    "WHERE date_format(ma.desttime,'%H:%i:%s')<='23:59:59' " +
                     "      AND date_format(ma.desttime,'%H:%i:%s')>='18:00:00' " +
-                    "GROUP BY  userid,destaddr " +
-                    "ORDER BY fre DESC " +
-                    "LIMIT 1");
-            ArrayList<String[]> guessedAddress=new ArrayList<String[]>();
-            for(int i=0;i!=id.length;i++){
-                ps.setString(1,id[i]);
-                ResultSet rs=ps.executeQuery();
-                while(rs.next()){
-                    guessedAddress.add(new String[]{rs.getString("userid"),rs.getString("destaddr")});
-                    //System.out.println(rs.getString("userid")
-                            //+","+rs.getString("destaddr")+":"+rs.getString("fre"));
-                }
+                    "GROUP BY  userid,destaddr ");
 
-            }
+            ArrayList<String[]> gueaddr=new ArrayList<String[]>();
+            String maxid=null;
+            String maxaddr=null;
+            int count=0;
 
-            ps=cn.prepareStatement("UPDATE `users` SET address=? WHERE id=?");
-            for(int i=0;i!=guessedAddress.size();i++){
-                ps.setString(1,guessedAddress.get(i)[1]);
-                ps.setString(2,guessedAddress.get(i)[0]);
-                ps.addBatch();
-                if(i%1000==0&&i!=0){
-                    ps.executeBatch();
-                }
+            String currentstid;
+            String currentaddr;
+            int fre;
+            while (rs.next()){
+                    currentstid=rs.getString("userid");
+                    currentaddr=rs.getString("destaddr");
+                    fre=rs.getInt("fre");
+                    //System.out.println(currentstid+";"+currentaddr+";"+fre);
+
+                    if(!currentstid.equals(maxid)){
+                        if(maxid==null){
+                            maxaddr=currentaddr;
+                            maxid=currentstid;
+                            count=fre;
+                        }else{
+                            gueaddr.add(new String[]{maxid,maxaddr});
+                           // System.out.println(maxid+";"+maxid+";"+count);
+                            maxaddr=currentaddr;
+                            maxid=currentstid;
+                            count=fre;
+                        }
+                    }else {
+                        if(count<fre){
+                            maxaddr=currentaddr;
+                            count=fre;
+                        }
+                    }
             }
-            ps.executeBatch();
+            s.close();
             cn.commit();
+            gueaddr.add(new String[]{maxid,maxaddr});
+            PreparedStatement ps=cn.prepareStatement("UPDATE `users` SET address=? WHERE id=?");
+            String[] k=null;
+            for(int i=0;i!=gueaddr.size();i++){
+                k=gueaddr.get(i);
+                ps.setString(1,k[1]);
+                ps.setString(2,k[0]);
+                ps.addBatch();
+                if(i%50000==0&&i!=0){
+                    ps.executeBatch();
+                    System.out.println("user id:"+i);
+                }
+            }
+            System.out.println(gueaddr.size());
+            ps.executeBatch();
             ps.close();
-        }catch(SQLException e){e.printStackTrace();}
+            cn.commit();
+
+            } catch(SQLException e){e.printStackTrace();}
 
     }
     public static void batchInsertBike(ArrayList<String[]> a){
